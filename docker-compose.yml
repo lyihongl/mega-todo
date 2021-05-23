@@ -1,0 +1,90 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:13.2-alpine
+    restart: always
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=test
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+  redis:
+    image: "redis:alpine"
+    ports:
+      - "6379:6379"
+    hostname: redis
+  service_register:
+    image: "redis:alpine"
+    ports:
+      - "6380:6379"
+    hostname: redis
+  backend:
+    depends_on:
+      - db
+      - redis
+      - service_register
+    ports:
+      - "4000:4000"
+    build:
+      context: ./todo-backend
+      dockerfile: ./Dockerfile
+      args:
+        - NOTE_ENV=local
+    command:
+      [
+        "./waitforit.sh",
+        "db:5432",
+        "--",
+        "./waitforit.sh",
+        "redis:6379",
+        "--",
+        "./waitforit.sh",
+        "service_register:6380",
+        "--",
+        "node",
+        "dist/index.js",
+      ]
+    environment:
+      - POSTGRES_HOST=db
+      - REDIS_PUBSUB=redis
+      - REDIS_SR=service_register
+  frontend:
+    depends_on:
+      - backend
+    links:
+      - "backend:localhost"
+    ports:
+      - "3000:3000"
+    build:
+      context: ./todo-frontend
+      dockerfile: ./Dockerfile
+      args:
+        - NODE_ENV=local
+  # zookeeper:
+  #   image: confluentinc/cp-zookeeper:latest
+  #   environment:
+  #     ZOOKEEPER_CLIENT_PORT: 2181
+  #     ZOOKEEPER_TICK_TIME: 2000
+  #   ports:
+  #     - 2181:2181
+
+  # kafka:
+  #   image: confluentinc/cp-kafka:latest
+  #   depends_on:
+  #     - zookeeper
+  #   ports:
+  #     - 29092:29092
+  #   environment:
+  #     KAFKA_BROKER_ID: 1
+  #     KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+  #     KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+  #     KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+  #     KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+  #     KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+volumes:
+  pgdata:
+    driver: "local"
