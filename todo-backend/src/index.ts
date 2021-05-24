@@ -3,7 +3,10 @@ import { MikroORM } from "@mikro-orm/core";
 import { jwt_secret, __prod__ } from "./constants";
 import mikroConfig from "./mikro-orm.config";
 import express from "express";
-import { ApolloServer } from "apollo-server-express";
+import {
+  ApolloServer,
+  CheckResultAndHandleErrors,
+} from "apollo-server-express";
 import { RedisPubSub } from "graphql-redis-subscriptions";
 
 import { buildSchema, PubSub, PubSubEngine } from "type-graphql";
@@ -12,7 +15,10 @@ import { UserResolver } from "./resolvers/user";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
-import { SubscriptionServer } from "subscriptions-transport-ws";
+import {
+  SubscriptionClient,
+  SubscriptionServer,
+} from "subscriptions-transport-ws";
 import { ExportCompleteNotificationResolver } from "./resolvers/notification";
 import { createServer } from "http";
 import { TaskResolver } from "./resolvers/task";
@@ -24,12 +30,25 @@ import util from "util";
 
 // import { Kafka } from "kafkajs";
 
-interface ServiceTypeMap {
-  [serviceType: string]: RedisService[];
-}
+// interface ServiceTypeMap {
+//   [serviceType: string]: RedisService[];
+// }
 interface IRedisServices {
-  services: ServiceTypeMap;
+  services: Record<string, RedisService[]>;
   serviceIds: Set<string>;
+}
+
+interface IRedisServiceRegistrar {
+  serviceData: IRedisServices;
+  pubclient: Redis.Redis;
+  subclient: Redis.Redis;
+  send: (type: string, message: string) => void;
+  registerHandler: (
+    type: string,
+    callback: (channel: string, message: string) => any
+  ) => any;
+  handlers: Record<string, (channel: string, message: string) => any>;
+  roundRobinner: Record<string, number>;
 }
 
 const main = async () => {
@@ -47,23 +66,6 @@ const main = async () => {
     services: {},
     serviceIds: new Set(),
   };
-  redisSR.keys("*").then((res) => {
-    res.forEach((key) =>
-      redisSR.get(key).then((message) => {
-        const split = message!.split("|");
-        if (split.length == 3 && !RedisServices.serviceIds.has(key)) {
-          if (!RedisServices.services[split[2]]) {
-            RedisServices.services[split[2]] = [];
-          }
-          RedisServices.services[split[2]].push({
-            listeningOn: split[0],
-            sendingOn: split[1],
-          });
-          RedisServices.serviceIds.add(key);
-        }
-      })
-    );
-  });
   redisSRSub.on("message", async (channel: string, message: string) => {
     const serviceData = await redisSR.get(message);
     const split = serviceData!.split("|");
@@ -77,9 +79,65 @@ const main = async () => {
       });
       RedisServices.serviceIds.add(message);
     }
-    console.log(util.inspect(RedisServices, { depth: null }));
   });
+  const redisKeys = await redisSR.keys("*");
+  await Promise.all(
+    redisKeys.map((key) => {
+      return new Promise<Boolean>((resolve, reject) => {
+        redisSR.get(key).then((message) => {
+          console.log("message: ", message);
+          const split = message!.split("|");
+          if (split.length == 3 && !RedisServices.serviceIds.has(key)) {
+            if (!RedisServices.services[split[2]]) {
+              RedisServices.services[split[2]] = [];
+            }
+            RedisServices.services[split[2]].push({
+              listeningOn: split[0],
+              sendingOn: split[1],
+            });
+            console.log("adding");
+            RedisServices.serviceIds.add(key);
+          }
+          resolve(true);
+        });
+      });
+    })
+  );
+  console.log(util.inspect(RedisServices, { depth: null }));
   redisSRSub.subscribe("new_service");
+  const redisRegistar: IRedisServiceRegistrar = {
+    serviceData: RedisServices,
+    pubclient: redisSR,
+    subclient: redisSRSub,
+    handlers: {},
+    send: (type: string, message: string) => {
+      const max = redisRegistar.serviceData.services[type].length;
+      redisRegistar.pubclient.publish(
+        redisRegistar.serviceData.services[type][
+          redisRegistar.roundRobinner[type]
+        ].sendingOn,
+        message
+      );
+      redisRegistar.roundRobinner[type] =
+        redisRegistar.roundRobinner[type] % max;
+    },
+    registerHandler: (
+      type: string,
+      callback: (channel: string, message: string) => any
+    ) => {
+      redisRegistar.subclient.subscribe(type);
+      redisRegistar.handlers[type] = callback;
+      redisRegistar.subclient.on(type, callback);
+    },
+    roundRobinner: {},
+  };
+  console.log(Object.keys(RedisServices.services));
+  Object.keys(RedisServices.services).forEach(
+    (e) => (redisRegistar.roundRobinner[e] = 0)
+  );
+  redisRegistar.send("test", "testing");
+  // RedisServices.services.serviceType
+  //   .keys()
   const redisOptions: Redis.RedisOptions = {
     host: process.env.REDIS_PUBSUB ? process.env.REDIS_PUBSUB : "localhost",
     port: 6379,
