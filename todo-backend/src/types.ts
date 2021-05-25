@@ -11,6 +11,7 @@ import {
 } from "@mikro-orm/postgresql";
 import { PubSub } from "apollo-server-express";
 import { Request, Response } from "express";
+import { Redis } from "ioredis";
 import { RedisClient } from "redis";
 import { ExecutionParams } from "subscriptions-transport-ws";
 
@@ -32,6 +33,8 @@ export type MyContext = {
 };
 
 export type RedisService = {
+  pubclient: Redis;
+  subclient: Redis;
   listeningOn: string;
   sendingOn: string;
   data?: string;

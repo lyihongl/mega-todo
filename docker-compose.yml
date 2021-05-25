@@ -21,7 +21,10 @@ services:
     image: "redis:alpine"
     ports:
       - "6380:6379"
-    hostname: redis
+  export_redis:
+    image: "redis:alpine"
+    ports:
+      - "6381:6379"
   backend:
     depends_on:
       - db
