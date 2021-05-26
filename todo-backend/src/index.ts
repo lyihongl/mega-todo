@@ -162,7 +162,7 @@ const main = async () => {
   Object.keys(RedisServices.services).forEach(
     (e) => (redisRegistar.roundRobinner[e] = 0)
   );
-  redisRegistar.send("export_service", "testing");
+  // redisRegistar.send("export_service", "testing");
   // RedisServices.services.serviceType
   //   .keys()
   const redisOptions: Redis.RedisOptions = {
