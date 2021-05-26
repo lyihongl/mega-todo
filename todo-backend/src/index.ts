@@ -46,10 +46,14 @@ interface IRedisServiceRegistrar {
 const main = async () => {
   //const redisClient = redis.createClient();
   const redisSROptions: Redis.RedisOptions = {
-    host: process.env.REDIS_PUBSUB ? process.env.REDIS_PUBSUB : "localhost",
+    host: process.env.REDIS_SR ? process.env.REDIS_SR : "localhost",
     port: 6380,
     retryStrategy: () => 3000,
   };
+  console.log(
+    "6380: ",
+    process.env.REDIS_PUBSUB ? process.env.REDIS_PUBSUB : "localhost"
+  );
 
   const redisSRSub = new Redis(redisSROptions);
   const redisSR = new Redis(redisSROptions);
@@ -159,9 +163,6 @@ const main = async () => {
     (e) => (redisRegistar.roundRobinner[e] = 0)
   );
   redisRegistar.send("export_service", "testing");
-  redisRegistar.registerHandler("export_service", (channel, message) => {
-    console.log("handler", message);
-  });
   // RedisServices.services.serviceType
   //   .keys()
   const redisOptions: Redis.RedisOptions = {
@@ -172,6 +173,11 @@ const main = async () => {
   const redisPubSub = new RedisPubSub({
     publisher: new Redis(redisOptions),
     subscriber: new Redis(redisOptions),
+  });
+  redisRegistar.registerHandler("export_service", (channel, message) => {
+    const notif = message.split("|");
+    redisPubSub.publish(notif[0], notif[1]);
+    //console.log("handler", message);
   });
 
   // redisClient.on("message", (channel, message) => {

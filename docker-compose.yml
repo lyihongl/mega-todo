@@ -12,23 +12,54 @@ services:
       - pgdata:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-  redis:
+  testing_redis:
     image: "redis:alpine"
     ports:
       - "6379:6379"
-    hostname: redis
   service_register:
     image: "redis:alpine"
+    command: --port 6380
     ports:
-      - "6380:6379"
+      - "6380:6380"
   export_redis:
     image: "redis:alpine"
+    command: --port 6381
     ports:
-      - "6381:6379"
+      - "6381:6381"
+  export_service:
+    depends_on:
+      - export_redis
+      - service_register
+      - db
+    build:
+      context: ./export-service
+      dockerfile: ./Dockerfile
+      args:
+        - NODE_ENV=local
+    environment:
+      - REDIS_PUBSUB=service_register
+      - REDIS_SERVICE=export_redis
+      - POSTGRES_HOST=db
+    env_file:
+      - ./export.env
+    command:
+      [
+        "./waitforit.sh",
+        "db:5432",
+        "--",
+        "./waitforit.sh",
+        "service_register:6380",
+        "--",
+        "./waitforit.sh",
+        "export_redis:6381",
+        "--",
+        "node",
+        "dist/index.js",
+      ]
   backend:
     depends_on:
       - db
-      - redis
+      - testing_redis
       - service_register
     ports:
       - "4000:4000"
@@ -43,7 +74,7 @@ services:
         "db:5432",
         "--",
         "./waitforit.sh",
-        "redis:6379",
+        "testing_redis:6379",
         "--",
         "./waitforit.sh",
         "service_register:6380",
@@ -53,7 +84,7 @@ services:
       ]
     environment:
       - POSTGRES_HOST=db
-      - REDIS_PUBSUB=redis
+      - REDIS_PUBSUB=testing_redis
       - REDIS_SR=service_register
   frontend:
     depends_on:
