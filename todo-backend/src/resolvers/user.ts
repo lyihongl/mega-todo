@@ -197,4 +197,11 @@ export class UserResolver {
     }
     return "ok";
   }
+  @Mutation(() => String)
+  exportService(@Ctx() { em, serviceRegister, jwtUserId }: MyContext) {
+    if (jwtUserId?.userId) {
+      serviceRegister.send("export_service", `${jwtUserId.userId}`);
+    }
+    return "ok";
+  }
 }

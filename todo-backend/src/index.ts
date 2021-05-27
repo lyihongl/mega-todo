@@ -19,7 +19,7 @@ import { TaskResolver } from "./resolvers/task";
 import Redis from "ioredis";
 import { PostgreSqlDriver } from "@mikro-orm/postgresql";
 import { MoodResolver } from "./resolvers/mood";
-import { RedisService } from "./types";
+import { RedisService, IRedisServiceRegistrar, IRedisServices } from "./types";
 import util from "util";
 
 // import { Kafka } from "kafkajs";
@@ -27,21 +27,6 @@ import util from "util";
 // interface ServiceTypeMap {
 //   [serviceType: string]: RedisService[];
 // }
-interface IRedisServices {
-  services: Record<string, RedisService[]>;
-  serviceIds: Set<string>;
-}
-
-interface IRedisServiceRegistrar {
-  serviceData: IRedisServices;
-  send: (type: string, message: string) => void;
-  registerHandler: (
-    type: string,
-    callback: (channel: string, message: string) => any
-  ) => any;
-  handlers: Record<string, (channel: string, message: string) => any>;
-  roundRobinner: Record<string, number>;
-}
 
 const main = async () => {
   //const redisClient = redis.createClient();
@@ -159,9 +144,11 @@ const main = async () => {
     roundRobinner: {},
   };
   console.log(Object.keys(RedisServices.services));
-  Object.keys(RedisServices.services).forEach(
-    (e) => (redisRegistar.roundRobinner[e] = 0)
-  );
+  if (Object.keys(RedisServices.services)) {
+    Object.keys(RedisServices.services).forEach(
+      (e) => (redisRegistar.roundRobinner[e] = 0)
+    );
+  }
   // redisRegistar.send("export_service", "testing");
   // RedisServices.services.serviceType
   //   .keys()
@@ -222,6 +209,7 @@ const main = async () => {
       req,
       res,
       connection,
+      serviceRegister: redisRegistar,
       // redisClient,
       jwtUserId: req.cookies.jwt
         ? jwt.verify(req.cookies.jwt, jwt_secret)

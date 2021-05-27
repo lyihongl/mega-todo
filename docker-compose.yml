@@ -61,6 +61,7 @@ services:
       - db
       - testing_redis
       - service_register
+      - export_redis
     ports:
       - "4000:4000"
     build:
